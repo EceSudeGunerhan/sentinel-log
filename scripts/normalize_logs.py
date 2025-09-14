@@ -1,6 +1,4 @@
-# scripts/normalize_logs.py
-
-import os, json, time, argparse, pathlib, re, random, uuid
+import os, json, time, argparse, pathlib, re, random
 from datetime import datetime, timezone
 import httpx
 from dotenv import load_dotenv
@@ -81,19 +79,12 @@ def call_groq_chat(system_prompt: str, user_prompt: str) -> tuple[dict | None, d
                 continue
 
             if resp.status_code >= 400:
-                return None, {
-                    "status": resp.status_code,
-                    "error": data.get("error", data),
-                    "latency_ms": elapsed_ms,
-                }
+                return None, {"status": resp.status_code, "error": data.get("error", data), "latency_ms": elapsed_ms}
 
             content = data["choices"][0]["message"]["content"]
             parsed = safe_json_from_text(content)
             if parsed:
-                return parsed, {
-                    "status": resp.status_code,
-                    "latency_ms": elapsed_ms,
-                }
+                return parsed, {"status": resp.status_code, "latency_ms": elapsed_ms}
             else:
                 print(f"[WARN] JSON parse failed. Retrying... ({retries+1})")
                 retries += 1
@@ -117,14 +108,6 @@ def coerce_canonical(obj: dict) -> dict:
 
 def fallback_record(pre: dict, raw: str, source_file: str) -> dict:
     """Fallback: even if LLM fails, build a minimal generic record."""
-    sev = "info"
-    if re.search(r"\berror\b", raw, re.I):
-        sev = "error"
-    elif re.search(r"\bwarn(ing)?\b", raw, re.I):
-        sev = "warn"
-    elif re.search(r"\bcritical\b", raw, re.I):
-        sev = "critical"
-
     return {
         "timestamp_iso": pre.get("timestamp_iso"),
         "source": source_file or None,
@@ -132,10 +115,10 @@ def fallback_record(pre: dict, raw: str, source_file: str) -> dict:
         "dst_ip": pre.get("dst_ip"),
         "protocol": pre.get("protocol"),
         "process": pre.get("process"),
-        "severity": sev,
-        "category": "system",  # LLM tahmini yoksa fallback
+        "severity": "info",        # default fallback
+        "category": "system",      # fallback category
         "status_code": pre.get("status_code"),
-        "message": raw[:200],
+        "message": raw[:200]       # raw log truncated
     }
 
 
@@ -157,7 +140,7 @@ def main():
         print("Missing GROQ_API_KEY in .env")
         return
 
-    total, written = 0, 0
+    total, ok_count = 0, 0
     with inp.open("r", encoding="utf-8", errors="ignore") as fin, \
          outp.open("w", encoding="utf-8") as fout:
 
@@ -186,7 +169,7 @@ def main():
                         fixed["source"] = source_file or None
 
                 fout.write(json.dumps(fixed, ensure_ascii=False) + "\n")
-                written += 1
+                ok_count += 1
 
                 time.sleep(SLEEP_BETWEEN_S)
 
@@ -201,11 +184,11 @@ def main():
                     "severity": "info",
                     "category": "system",
                     "status_code": None,
-                    "message": line[:200],
+                    "message": line[:200]
                 }
                 fout.write(json.dumps(fb, ensure_ascii=False) + "\n")
 
-    print(f"\nDone. total={total}, written={written}")
+    print(f"\nDone. total={total}, written={ok_count}")
     print(f"Output -> {outp}")
 
 

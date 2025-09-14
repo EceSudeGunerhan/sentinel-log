@@ -1,7 +1,5 @@
-# scripts/patterns.py
-
 import re
-from datetime import datetime, timezone
+from datetime import timezone
 from dateutil import parser as dtparser
 
 # Regex patterns
@@ -13,14 +11,16 @@ RE_PROCESS = re.compile(r"\bprocess(?:name)?[:=]\s*([A-Za-z0-9_\-\.]+)\b", re.I)
 # IDS/IPS style "x.x.x.x:port -> y.y.y.y:port"
 RE_IDS_FLOW = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3}):(\d+) -> (\d{1,3}(?:\.\d{1,3}){3}):(\d+)")
 
-# Timestamp regexes
+# Timestamps (apache/syslog/iso + geniş arama)
 RE_TS_APACHE = re.compile(r"\[(\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2}\s*[+\-]\d{4})\]")
 RE_TS_SYSLOG = re.compile(r"\b([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\b")
 RE_TS_ISO = re.compile(r"\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})?)\b")
+RE_TS_FULLDATE = re.compile(r"\b(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\b")
+
 
 def parse_timestamp_iso(raw: str) -> str | None:
     """Parse various timestamp formats into ISO8601 UTC string."""
-    for regex in (RE_TS_APACHE, RE_TS_ISO, RE_TS_SYSLOG):
+    for regex in (RE_TS_ISO, RE_TS_APACHE, RE_TS_SYSLOG, RE_TS_FULLDATE):
         m = regex.search(raw)
         if m:
             try:
@@ -34,7 +34,8 @@ def parse_timestamp_iso(raw: str) -> str | None:
     except:
         return None
 
-def extract_ips(raw: str) -> tuple[str | None, str | None]:
+
+def extract_ips_ports(raw: str) -> tuple[str | None, str | None]:
     """Try IDS-style flow first, else fallback to first 2 IPv4s."""
     m = RE_IDS_FLOW.search(raw)
     if m:
@@ -45,6 +46,7 @@ def extract_ips(raw: str) -> tuple[str | None, str | None]:
     elif len(ips) == 1:
         return ips[0], None
     return None, None
+
 
 def extract_status_code(raw: str) -> int | None:
     """Try generic status=XXX or standalone 3-digit codes (SMTP/HTTP)."""
@@ -58,6 +60,7 @@ def extract_status_code(raw: str) -> int | None:
             return code
     return None
 
+
 def extract_process(raw: str) -> str | None:
     """Catch 'process=xyz', 'sshd[123]', 'MTA[pid]' etc."""
     m = RE_PROCESS.search(raw)
@@ -68,9 +71,10 @@ def extract_process(raw: str) -> str | None:
         return m2.group(1)
     return None
 
+
 def extract_basic_fields(raw: str) -> dict:
     ts = parse_timestamp_iso(raw)
-    src_ip, dst_ip = extract_ips(raw)
+    src_ip, dst_ip = extract_ips_ports(raw)
 
     protocol = None
     m = RE_PROTO.search(raw)

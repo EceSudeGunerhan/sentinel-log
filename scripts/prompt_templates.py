@@ -1,7 +1,3 @@
-# scripts/prompt_templates.py
-
-# Prompt templates for strict normalization into 10-column schema
-
 CANONICAL_ENUMS = {
     "severity": ["info", "warn", "error", "critical"],
     "category": [
@@ -23,15 +19,20 @@ SYSTEM_PROMPT = """You are a strict JSON normalizer for log lines.
 - Output ONLY one JSON object. Nothing before, nothing after.
 - Use double quotes for all keys and string values.
 - No <think>, no explanations, no markdown, no code fences, no comments.
-- Keys must be exactly: timestamp_iso, source, src_ip, dst_ip, protocol,
-                         process, severity, category, status_code, message.
+- Keys must be exactly: timestamp_iso, source, src_ip, dst_ip,
+                         protocol, process, severity, category,
+                         status_code, message.
 - If a field is missing, set it to null.
 - severity must be one of: info, warn, error, critical.
-- category must be inferred from the RAW log content (not from file path).
-- message: short normalized description.
+- category must be inferred ONLY from the raw log content, not from file path.
+- message: short normalized description of the log.
 """
 
 def build_user_prompt(raw: str, pre: dict) -> str:
+    """
+    Build the user prompt given raw log and regex-pre extracted fields.
+    Category hint is NOT passed anymore, must be inferred from raw.
+    """
     lines = []
     lines.append("RAW LOG LINE:")
     lines.append(raw.strip())
