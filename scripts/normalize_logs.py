@@ -4,7 +4,7 @@ import httpx
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-from scripts.patterns import extract_basic_fields
+from scripts.patterns import extract_generic
 from scripts.prompt_templates import SYSTEM_PROMPT, build_user_prompt, CANONICAL_KEYS
 
 load_dotenv()
@@ -106,19 +106,19 @@ def coerce_canonical(obj: dict) -> dict:
     return fixed
 
 
-def fallback_record(pre: dict, raw: str, source_file: str) -> dict:
-    """Fallback: even if LLM fails, build a minimal generic record."""
+def fallback_record(pre: dict, source_file: str) -> dict:
+    """Fallback: if LLM fails, keep regex-parsed fields."""
     return {
         "timestamp_iso": pre.get("timestamp_iso"),
-        "source": source_file or None,
+        "source": source_file or pre.get("source"),
         "src_ip": pre.get("src_ip"),
         "dst_ip": pre.get("dst_ip"),
         "protocol": pre.get("protocol"),
         "process": pre.get("process"),
-        "severity": "info",        # default fallback
-        "category": "system",      # fallback category
+        "severity": pre.get("severity") or "INFO",
+        "category": pre.get("category") or "SYSTEM",
         "status_code": pre.get("status_code"),
-        "message": raw[:200]       # raw log truncated
+        "message": pre.get("message"),
     }
 
 
@@ -153,13 +153,13 @@ def main():
                 raw = rec.get("raw", "")
                 source_file = rec.get("source_file", "")
 
-                pre = extract_basic_fields(raw)
+                pre = extract_generic(raw, source_file)
                 user_prompt = build_user_prompt(raw, pre)
 
                 parsed, meta = call_groq_chat(SYSTEM_PROMPT, user_prompt)
 
                 if not parsed:
-                    fixed = fallback_record(pre, raw, source_file)
+                    fixed = fallback_record(pre, source_file)
                 else:
                     for k, v in pre.items():
                         if parsed.get(k) in (None, "") and v is not None:
@@ -174,18 +174,7 @@ def main():
                 time.sleep(SLEEP_BETWEEN_S)
 
             except Exception as e:
-                fb = {
-                    "timestamp_iso": None,
-                    "source": None,
-                    "src_ip": None,
-                    "dst_ip": None,
-                    "protocol": None,
-                    "process": None,
-                    "severity": "info",
-                    "category": "system",
-                    "status_code": None,
-                    "message": line[:200]
-                }
+                fb = fallback_record({}, None)
                 fout.write(json.dumps(fb, ensure_ascii=False) + "\n")
 
     print(f"\nDone. total={total}, written={ok_count}")
